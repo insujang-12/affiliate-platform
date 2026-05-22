@@ -88,15 +88,11 @@ function transformSql(sql: string): string {
 
 class PgClient implements DbClient {
   readonly isPg = true;
-  private pool: any = null;
   private initPromise: Promise<void> | null = null;
 
-  private getPool() {
-    if (!this.pool) {
-      const { createPool } = require('@vercel/postgres') as typeof import('@vercel/postgres');
-      this.pool = createPool({ connectionString: process.env.POSTGRES_URL || process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL });
-    }
-    return this.pool;
+  private getDb() {
+    const { db } = require('@vercel/postgres') as typeof import('@vercel/postgres');
+    return db;
   }
 
   private async ensureInit() {
@@ -111,7 +107,7 @@ class PgClient implements DbClient {
   }
 
   private async _initSchema() {
-    const pool = this.getPool();
+    const pool = this.getDb();
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -307,14 +303,14 @@ class PgClient implements DbClient {
   async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     await this.ensureInit();
     const transformed = transformSql(sql);
-    const result = await this.getPool().query(transformed, params);
+    const result = await this.getDb().query(transformed, params);
     return result.rows as T[];
   }
 
   async queryOne<T = any>(sql: string, params: any[] = []): Promise<T | null> {
     await this.ensureInit();
     const transformed = transformSql(sql);
-    const result = await this.getPool().query(transformed, params);
+    const result = await this.getDb().query(transformed, params);
     return (result.rows[0] as T) ?? null;
   }
 
@@ -329,7 +325,7 @@ class PgClient implements DbClient {
       transformed = transformed.trimEnd().replace(/;?\s*$/, '') + ' RETURNING id';
     }
 
-    const result = await this.getPool().query(transformed, params);
+    const result = await this.getDb().query(transformed, params);
     return {
       changes: result.rowCount ?? 0,
       lastId: Number(result.rows[0]?.id ?? 0),
@@ -338,7 +334,7 @@ class PgClient implements DbClient {
 
   async transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T> {
     await this.ensureInit();
-    const pool = this.getPool();
+    const pool = this.getDb();
     const client = await pool.connect();
     try {
       await client.query('BEGIN');

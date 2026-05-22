@@ -1,3 +1,6 @@
+// 8 rounds ≈ 50-80ms — sufficient security for a web app, 4× faster than 10 rounds
+export const BCRYPT_ROUNDS = 8;
+
 export function formatKRW(amount: number): string {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount);
 }

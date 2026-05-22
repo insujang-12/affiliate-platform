@@ -221,7 +221,7 @@ class PgClient implements DbClient {
     // Brand demo user
     const brandExists = await pool.query('SELECT id FROM users WHERE email = $1', ['brand@example.com']);
     if (brandExists.rows.length === 0) {
-      const brandHash = await bcrypt.hash('brand1234', 10);
+      const brandHash = await bcrypt.hash('brand1234', 8);
       const { rows: [{ id: brandId }] } = await pool.query(
         `INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, 'brand') RETURNING id`,
         ['쿠팡 파트너스 데모', 'brand@example.com', brandHash]
@@ -236,7 +236,7 @@ class PgClient implements DbClient {
     const infExists = await pool.query('SELECT id FROM users WHERE email = $1', ['demo@example.com']);
     if (infExists.rows.length > 0) return;
 
-    const hash = await bcrypt.hash('demo1234', 10);
+    const hash = await bcrypt.hash('demo1234', 8);
     const { rows: [{ id: userId }] } = await pool.query(
       `INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,'influencer') RETURNING id`,
       ['김지수', 'demo@example.com', hash]

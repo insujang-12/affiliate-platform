@@ -15,7 +15,7 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email || !credentials?.password) return null;
 
         const db = getDbClient();
-        const user = await db.queryOne<any>('SELECT * FROM users WHERE email = ?', [credentials.email]);
+        const user = await db.queryOne<any>('SELECT id, name, email, password, role FROM users WHERE email = ?', [credentials.email]);
         if (!user) return null;
 
         const valid = await bcrypt.compare(credentials.password, user.password);

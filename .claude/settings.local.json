@@ -11,7 +11,14 @@
       "Bash(where winget *)",
       "Bash(where scoop *)",
       "Bash(\"C:/tools/ngrok/ngrok.exe\" http *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(dir data *)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(gh auth *)",
+      "Bash(git remote *)",
+      "Bash(git credential *)"
     ]
   }
 }

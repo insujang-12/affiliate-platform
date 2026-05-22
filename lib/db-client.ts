@@ -19,7 +19,7 @@ class SqliteClient implements DbClient {
   readonly isPg = false;
 
   private getDb() {
-    // lazy require so better-sqlite3 is never loaded when POSTGRES_URL is set
+    // lazy require so better-sqlite3 is never loaded when PRISMA_DATABASE_URL is set
     const { getDb } = require('./db') as { getDb: () => import('better-sqlite3').Database };
     return getDb();
   }

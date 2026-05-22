@@ -88,17 +88,21 @@ function transformSql(sql: string): string {
 
 class PgClient implements DbClient {
   readonly isPg = true;
+  private client: any = null;
   private initPromise: Promise<void> | null = null;
 
-  private getDb() {
-    const { db } = require('@vercel/postgres') as typeof import('@vercel/postgres');
-    return db;
+  private async getConnectedClient() {
+    if (!this.client) {
+      const { createClient } = require('@vercel/postgres') as typeof import('@vercel/postgres');
+      this.client = createClient();
+      await this.client.connect();
+    }
+    return this.client;
   }
 
   private async ensureInit() {
     if (!this.initPromise) {
       this.initPromise = this._initSchema().catch((err) => {
-        // Reset so the next request retries rather than permanently failing
         this.initPromise = null;
         throw err;
       });
@@ -107,7 +111,7 @@ class PgClient implements DbClient {
   }
 
   private async _initSchema() {
-    const pool = this.getDb();
+    const pool = await this.getConnectedClient();
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -211,7 +215,8 @@ class PgClient implements DbClient {
     await this._seedDemoData(pool);
   }
 
-  private async _seedDemoData(pool: any) {
+  private async _seedDemoData(client: any) {
+    const pool = client;
     const bcrypt = require('bcryptjs');
 
     // Brand demo user
@@ -303,14 +308,16 @@ class PgClient implements DbClient {
   async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     await this.ensureInit();
     const transformed = transformSql(sql);
-    const result = await this.getDb().query(transformed, params);
+    const client = await this.getConnectedClient();
+    const result = await client.query(transformed, params);
     return result.rows as T[];
   }
 
   async queryOne<T = any>(sql: string, params: any[] = []): Promise<T | null> {
     await this.ensureInit();
     const transformed = transformSql(sql);
-    const result = await this.getDb().query(transformed, params);
+    const client = await this.getConnectedClient();
+    const result = await client.query(transformed, params);
     return (result.rows[0] as T) ?? null;
   }
 
@@ -325,7 +332,8 @@ class PgClient implements DbClient {
       transformed = transformed.trimEnd().replace(/;?\s*$/, '') + ' RETURNING id';
     }
 
-    const result = await this.getDb().query(transformed, params);
+    const client = await this.getConnectedClient();
+    const result = await client.query(transformed, params);
     return {
       changes: result.rowCount ?? 0,
       lastId: Number(result.rows[0]?.id ?? 0),
@@ -334,19 +342,15 @@ class PgClient implements DbClient {
 
   async transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T> {
     await this.ensureInit();
-    const pool = this.getDb();
-    const client = await pool.connect();
+    const client = await this.getConnectedClient();
+    await client.query('BEGIN');
     try {
-      await client.query('BEGIN');
-      const txClient = new PgTxClient(client);
-      const result = await fn(txClient);
+      const result = await fn(new PgTxClient(client));
       await client.query('COMMIT');
       return result;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
-    } finally {
-      client.release();
     }
   }
 }

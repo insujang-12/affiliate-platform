@@ -94,7 +94,7 @@ class PgClient implements DbClient {
   private getPool() {
     if (!this.pool) {
       const { createPool } = require('@vercel/postgres') as typeof import('@vercel/postgres');
-      this.pool = createPool({ connectionString: process.env.POSTGRES_URL });
+      this.pool = createPool({ connectionString: process.env.PRISMA_DATABASE_URL });
     }
     return this.pool;
   }
@@ -402,7 +402,7 @@ let _client: DbClient | null = null;
 
 export function getDbClient(): DbClient {
   if (!_client) {
-    if (process.env.POSTGRES_URL) {
+    if (process.env.PRISMA_DATABASE_URL) {
       _client = new PgClient();
     } else {
       _client = new SqliteClient();

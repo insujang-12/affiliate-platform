@@ -19,7 +19,7 @@ class SqliteClient implements DbClient {
   readonly isPg = false;
 
   private getDb() {
-    // lazy require so better-sqlite3 is never loaded when PRISMA_DATABASE_URL is set
+    // lazy require so better-sqlite3 is never loaded when a Postgres URL is set
     const { getDb } = require('./db') as { getDb: () => import('better-sqlite3').Database };
     return getDb();
   }
@@ -94,7 +94,7 @@ class PgClient implements DbClient {
   private getPool() {
     if (!this.pool) {
       const { createPool } = require('@vercel/postgres') as typeof import('@vercel/postgres');
-      this.pool = createPool({ connectionString: process.env.PRISMA_DATABASE_URL });
+      this.pool = createPool({ connectionString: process.env.POSTGRES_URL || process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL });
     }
     return this.pool;
   }
@@ -402,7 +402,7 @@ let _client: DbClient | null = null;
 
 export function getDbClient(): DbClient {
   if (!_client) {
-    if (process.env.PRISMA_DATABASE_URL) {
+    if (process.env.POSTGRES_URL || process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL) {
       _client = new PgClient();
     } else {
       _client = new SqliteClient();

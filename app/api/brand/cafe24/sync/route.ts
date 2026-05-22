@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { getDbClient } from '@/lib/db-client';
 import { getOrders, getAccessToken, extractAffiliateCode } from '@/lib/cafe24';
 
 export async function POST(req: NextRequest) {
@@ -12,15 +12,17 @@ export async function POST(req: NextRequest) {
   }
 
   const { credential_id } = await req.json().catch(() => ({}));
-  const db = getDb();
+  const db = getDbClient();
 
-  const credQuery = credential_id
-    ? 'SELECT * FROM cafe24_credentials WHERE id = ? AND user_id = ? AND is_connected = 1'
-    : 'SELECT * FROM cafe24_credentials WHERE user_id = ? AND is_connected = 1 LIMIT 1';
-
-  const cred = (credential_id
-    ? db.prepare(credQuery).get(credential_id, user.id)
-    : db.prepare(credQuery).get(user.id)) as any;
+  const cred = credential_id
+    ? await db.queryOne<any>(
+        'SELECT * FROM cafe24_credentials WHERE id = ? AND user_id = ? AND is_connected = 1',
+        [credential_id, user.id]
+      )
+    : await db.queryOne<any>(
+        'SELECT * FROM cafe24_credentials WHERE user_id = ? AND is_connected = 1 LIMIT 1',
+        [user.id]
+      );
 
   if (!cred) {
     return NextResponse.json({ error: '연결된 카페24 계정이 없습니다.' }, { status: 400 });
@@ -36,13 +38,13 @@ export async function POST(req: NextRequest) {
     try {
       const tokens = await getAccessToken(cred.mall_id, cred.client_id, cred.client_secret);
       accessToken = tokens.access_token;
-      db.prepare(`
+      await db.run(`
         UPDATE cafe24_credentials
         SET access_token = ?, token_expires_at = ?
         WHERE id = ?
-      `).run(tokens.access_token, tokens.expires_at, cred.id);
+      `, [tokens.access_token, tokens.expires_at, cred.id]);
     } catch (err: any) {
-      db.prepare('UPDATE cafe24_credentials SET is_connected = 0 WHERE id = ?').run(cred.id);
+      await db.run('UPDATE cafe24_credentials SET is_connected = 0 WHERE id = ?', [cred.id]);
       return NextResponse.json({
         error: `토큰 재발급 실패: ${err.message ?? 'API 인증 오류'}`,
       }, { status: 401 });
@@ -68,19 +70,7 @@ export async function POST(req: NextRequest) {
 
     const orders = result.orders ?? [];
 
-    const insertOrder = db.prepare(`
-      INSERT OR IGNORE INTO cafe24_synced_orders
-        (credential_id, order_id, order_date, buyer_name, total_price,
-         affiliate_code, link_id, commission, is_attributed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const insertConversion = db.prepare(`
-      INSERT INTO conversions (link_id, order_id, amount, commission, converted_at)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    const processOrders = db.transaction((orders: any[]) => {
+    await db.transaction(async (tx) => {
       for (const order of orders) {
         const affiliateCode = extractAffiliateCode(order);
         const totalPrice = parseFloat(order.actual_payment_amount || order.total_price || '0');
@@ -90,12 +80,12 @@ export async function POST(req: NextRequest) {
         let isAttributed = 0;
 
         if (affiliateCode) {
-          const link = db.prepare(`
+          const link = await tx.queryOne<any>(`
             SELECT tl.id, COALESCE(c.revenue_share, 0) as revenue_share
             FROM tracking_links tl
             LEFT JOIN contracts c ON tl.contract_id = c.id
             WHERE tl.code = ?
-          `).get(affiliateCode) as any;
+          `, [affiliateCode]);
 
           if (link) {
             linkId = link.id;
@@ -104,30 +94,37 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const inserted = insertOrder.run(
-          cred.id, order.order_id, order.order_date, order.buyer_name,
-          totalPrice, affiliateCode, linkId, commission, isAttributed
-        );
+        const inserted = await tx.run(`
+          INSERT OR IGNORE INTO cafe24_synced_orders
+            (credential_id, order_id, order_date, buyer_name, total_price,
+             affiliate_code, link_id, commission, is_attributed)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [cred.id, order.order_id, order.order_date, order.buyer_name,
+            totalPrice, affiliateCode, linkId, commission, isAttributed]);
 
         if (inserted.changes > 0) {
           syncedCount++;
           if (isAttributed && linkId) {
             attributedCount++;
-            const already = db.prepare(
-              'SELECT id FROM conversions WHERE order_id = ? AND link_id = ?'
-            ).get(order.order_id, linkId);
+            const already = await tx.queryOne(
+              'SELECT id FROM conversions WHERE order_id = ? AND link_id = ?',
+              [order.order_id, linkId]
+            );
             if (!already) {
-              insertConversion.run(linkId, order.order_id, totalPrice, commission, order.order_date);
+              await tx.run(`
+                INSERT INTO conversions (link_id, order_id, amount, commission, converted_at)
+                VALUES (?, ?, ?, ?, ?)
+              `, [linkId, order.order_id, totalPrice, commission, order.order_date]);
             }
           }
         }
       }
     });
 
-    processOrders(orders);
-
-    db.prepare("UPDATE cafe24_credentials SET last_synced_at = datetime('now') WHERE id = ?")
-      .run(cred.id);
+    await db.run(
+      "UPDATE cafe24_credentials SET last_synced_at = datetime('now') WHERE id = ?",
+      [cred.id]
+    );
 
     return NextResponse.json({
       success: true,

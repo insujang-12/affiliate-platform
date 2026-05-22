@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { getDbClient } from '@/lib/db-client';
 
 interface LinkStat {
   id: number;
@@ -22,21 +22,44 @@ export async function GET(req: NextRequest) {
   const userId = (session.user as any).id;
   const period = new URL(req.url).searchParams.get('period') ?? '30d';
 
-  const clicksCond =
-    period === '7d'  ? "AND cl.clicked_at  >= datetime('now', '-7 days')" :
-    period === '30d' ? "AND cl.clicked_at  >= datetime('now', '-30 days')" : '';
+  const db = getDbClient();
 
-  const convsCond =
-    period === '7d'  ? "AND cv.converted_at >= datetime('now', '-7 days')" :
-    period === '30d' ? "AND cv.converted_at >= datetime('now', '-30 days')" : '';
+  let clicksCond: string;
+  let convsCond: string;
+  let heatCond: string;
+  let hourExpr: string;
 
-  const heatCond =
-    period === '7d'  ? "AND cl.clicked_at >= datetime('now', '-7 days')" :
-    period === '30d' ? "AND cl.clicked_at >= datetime('now', '-30 days')" : '';
+  if (db.isPg) {
+    clicksCond =
+      period === '7d'  ? "AND cl.clicked_at  >= NOW() - INTERVAL '7 days'" :
+      period === '30d' ? "AND cl.clicked_at  >= NOW() - INTERVAL '30 days'" : '';
 
-  const db = getDb();
+    convsCond =
+      period === '7d'  ? "AND cv.converted_at >= NOW() - INTERVAL '7 days'" :
+      period === '30d' ? "AND cv.converted_at >= NOW() - INTERVAL '30 days'" : '';
 
-  const links = db.prepare(`
+    heatCond =
+      period === '7d'  ? "AND cl.clicked_at >= NOW() - INTERVAL '7 days'" :
+      period === '30d' ? "AND cl.clicked_at >= NOW() - INTERVAL '30 days'" : '';
+
+    hourExpr = "EXTRACT(HOUR FROM cl.clicked_at)::INTEGER AS hour";
+  } else {
+    clicksCond =
+      period === '7d'  ? "AND cl.clicked_at  >= datetime('now', '-7 days')" :
+      period === '30d' ? "AND cl.clicked_at  >= datetime('now', '-30 days')" : '';
+
+    convsCond =
+      period === '7d'  ? "AND cv.converted_at >= datetime('now', '-7 days')" :
+      period === '30d' ? "AND cv.converted_at >= datetime('now', '-30 days')" : '';
+
+    heatCond =
+      period === '7d'  ? "AND cl.clicked_at >= datetime('now', '-7 days')" :
+      period === '30d' ? "AND cl.clicked_at >= datetime('now', '-30 days')" : '';
+
+    hourExpr = "CAST(strftime('%H', cl.clicked_at) AS INTEGER) AS hour";
+  }
+
+  const links = await db.query(`
     SELECT
       tl.id, tl.title, tl.code,
       COALESCE(c.brand_name, '계약 미연결') AS brand_name,
@@ -56,18 +79,18 @@ export async function GET(req: NextRequest) {
     WHERE tl.user_id = ?
     GROUP BY tl.id
     ORDER BY revenue DESC
-  `).all(userId) as LinkStat[];
+  `, [userId]) as LinkStat[];
 
-  const hourlyRaw = db.prepare(`
+  const hourlyRaw = await db.query(`
     SELECT
-      CAST(strftime('%H', cl.clicked_at) AS INTEGER) AS hour,
+      ${hourExpr},
       COUNT(*) AS clicks
     FROM clicks cl
     JOIN tracking_links tl ON cl.link_id = tl.id
     WHERE tl.user_id = ? ${heatCond}
     GROUP BY hour
     ORDER BY hour
-  `).all(userId) as { hour: number; clicks: number }[];
+  `, [userId]) as { hour: number; clicks: number }[];
 
   const hourlyMap: Record<number, number> = {};
   for (const row of hourlyRaw) hourlyMap[row.hour] = row.clicks;

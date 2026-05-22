@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { getDbClient } from '@/lib/db-client';
 import { generateCode } from '@/lib/utils';
 
 export async function GET() {
@@ -9,9 +9,9 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: '인증 필요' }, { status: 401 });
 
   const userId = (session.user as any).id;
-  const db = getDb();
+  const db = getDbClient();
 
-  const links = db.prepare(`
+  const links = await db.query(`
     SELECT
       tl.id, tl.title, tl.original_url, tl.code, tl.created_at,
       c.brand_name, c.revenue_share,
@@ -25,7 +25,7 @@ export async function GET() {
     WHERE tl.user_id = ?
     GROUP BY tl.id
     ORDER BY tl.created_at DESC
-  `).all(userId);
+  `, [userId]);
 
   return NextResponse.json(links);
 }
@@ -41,19 +41,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '제목과 URL을 입력해주세요.' }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = getDbClient();
   let code = generateCode();
   // Ensure uniqueness
-  while (db.prepare('SELECT id FROM tracking_links WHERE code = ?').get(code)) {
+  while (await db.queryOne('SELECT id FROM tracking_links WHERE code = ?', [code])) {
     code = generateCode();
   }
 
-  const result = db.prepare(`
+  const result = await db.run(`
     INSERT INTO tracking_links (user_id, contract_id, title, original_url, code)
     VALUES (?, ?, ?, ?, ?)
-  `).run(userId, contract_id || null, title, original_url, code);
+  `, [userId, contract_id || null, title, original_url, code]);
 
-  return NextResponse.json({ id: result.lastInsertRowid, code });
+  return NextResponse.json({ id: result.lastId, code });
 }
 
 export async function DELETE(req: NextRequest) {
@@ -64,8 +64,8 @@ export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get('id');
 
-  const db = getDb();
-  db.prepare('DELETE FROM tracking_links WHERE id = ? AND user_id = ?').run(id, userId);
+  const db = getDbClient();
+  await db.run('DELETE FROM tracking_links WHERE id = ? AND user_id = ?', [id, userId]);
 
   return NextResponse.json({ success: true });
 }

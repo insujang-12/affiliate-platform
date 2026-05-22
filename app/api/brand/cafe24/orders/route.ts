@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { getDbClient } from '@/lib/db-client';
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -14,9 +14,10 @@ export async function GET(req: NextRequest) {
   const credentialId = searchParams.get('credential_id');
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 200);
 
-  const db = getDb();
+  const db = getDbClient();
 
-  const orders = db.prepare(`
+  const ordersParams = credentialId ? [user.id, credentialId, limit] : [user.id, limit];
+  const orders = await db.query(`
     SELECT
       so.id, so.order_id, so.order_date, so.buyer_name,
       so.total_price, so.affiliate_code, so.commission,
@@ -28,11 +29,10 @@ export async function GET(req: NextRequest) {
     WHERE cc.user_id = ? ${credentialId ? 'AND cc.id = ?' : ''}
     ORDER BY so.synced_at DESC
     LIMIT ?
-  `).all(
-    ...(credentialId ? [user.id, credentialId, limit] : [user.id, limit])
-  );
+  `, ordersParams);
 
-  const stats = db.prepare(`
+  const statsParams = credentialId ? [user.id, credentialId] : [user.id];
+  const stats = await db.queryOne(`
     SELECT
       COUNT(*) as total_orders,
       SUM(CASE WHEN is_attributed = 1 THEN 1 ELSE 0 END) as attributed_orders,
@@ -41,9 +41,7 @@ export async function GET(req: NextRequest) {
     FROM cafe24_synced_orders so
     JOIN cafe24_credentials cc ON so.credential_id = cc.id
     WHERE cc.user_id = ? ${credentialId ? 'AND cc.id = ?' : ''}
-  `).get(
-    ...(credentialId ? [user.id, credentialId] : [user.id])
-  ) as any;
+  `, statsParams) as any;
 
   return NextResponse.json({ orders, stats });
 }

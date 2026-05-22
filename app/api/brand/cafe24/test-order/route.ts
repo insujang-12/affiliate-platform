@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { getDbClient } from '@/lib/db-client';
 import { generateCode } from '@/lib/utils';
 
 const BUYER_NAMES = [
@@ -26,8 +26,8 @@ export async function GET() {
     return NextResponse.json({ error: '인증 필요' }, { status: 401 });
   }
 
-  const db = getDb();
-  const links = db.prepare(`
+  const db = getDbClient();
+  const links = await db.query(`
     SELECT
       tl.id, tl.code, tl.title, tl.original_url,
       u.name  AS influencer_name,
@@ -37,7 +37,7 @@ export async function GET() {
     LEFT JOIN contracts c ON tl.contract_id = c.id
     LEFT JOIN users u ON tl.user_id = u.id
     ORDER BY tl.created_at DESC
-  `).all();
+  `);
 
   return NextResponse.json(links);
 }
@@ -51,41 +51,40 @@ export async function POST(req: NextRequest) {
   }
 
   const { link_code } = await req.json().catch(() => ({}));
-  const db = getDb();
+  const db = getDbClient();
 
   // 브랜드 credential 조회 또는 테스트용 자동 생성
-  let cred = db.prepare(
-    'SELECT id FROM cafe24_credentials WHERE user_id = ? LIMIT 1'
-  ).get(user.id) as any;
+  let cred = await db.queryOne<any>(
+    'SELECT id FROM cafe24_credentials WHERE user_id = ? LIMIT 1',
+    [user.id]
+  );
 
   if (!cred) {
-    const result = db.prepare(`
+    const result = await db.run(`
       INSERT INTO cafe24_credentials (user_id, mall_id, client_id, client_secret, is_connected)
       VALUES (?, 'testmall', 'test_client_id', 'test_secret', 1)
-    `).run(user.id);
-    cred = { id: Number(result.lastInsertRowid) };
+    `, [user.id]);
+    cred = { id: result.lastId };
   }
 
   // 트래킹 링크 선택 (지정 or 랜덤)
-  const link = (
-    link_code
-      ? db.prepare(`
-          SELECT tl.id, tl.code, tl.title, u.name AS influencer_name,
-                 COALESCE(c.revenue_share, 0) AS revenue_share
-          FROM tracking_links tl
-          LEFT JOIN contracts c ON tl.contract_id = c.id
-          LEFT JOIN users u ON tl.user_id = u.id
-          WHERE tl.code = ?
-        `).get(link_code)
-      : db.prepare(`
-          SELECT tl.id, tl.code, tl.title, u.name AS influencer_name,
-                 COALESCE(c.revenue_share, 0) AS revenue_share
-          FROM tracking_links tl
-          LEFT JOIN contracts c ON tl.contract_id = c.id
-          LEFT JOIN users u ON tl.user_id = u.id
-          ORDER BY RANDOM() LIMIT 1
-        `).get()
-  ) as any;
+  const link = link_code
+    ? await db.queryOne<any>(`
+        SELECT tl.id, tl.code, tl.title, u.name AS influencer_name,
+               COALESCE(c.revenue_share, 0) AS revenue_share
+        FROM tracking_links tl
+        LEFT JOIN contracts c ON tl.contract_id = c.id
+        LEFT JOIN users u ON tl.user_id = u.id
+        WHERE tl.code = ?
+      `, [link_code])
+    : await db.queryOne<any>(`
+        SELECT tl.id, tl.code, tl.title, u.name AS influencer_name,
+               COALESCE(c.revenue_share, 0) AS revenue_share
+        FROM tracking_links tl
+        LEFT JOIN contracts c ON tl.contract_id = c.id
+        LEFT JOIN users u ON tl.user_id = u.id
+        ORDER BY RANDOM() LIMIT 1
+      `);
 
   if (!link) {
     return NextResponse.json(
@@ -103,23 +102,24 @@ export async function POST(req: NextRequest) {
   const orderDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
   try {
-    db.prepare(`
+    await db.run(`
       INSERT OR IGNORE INTO cafe24_synced_orders
         (credential_id, order_id, order_date, buyer_name, total_price,
          affiliate_code, link_id, commission, is_attributed)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-    `).run(cred.id, orderId, orderDate, buyerName, amount, link.code, link.id, commission);
+    `, [cred.id, orderId, orderDate, buyerName, amount, link.code, link.id, commission]);
 
     // conversions 테이블에도 삽입 → 인플루언서 대시보드 즉시 반영
-    const already = db.prepare(
-      'SELECT id FROM conversions WHERE order_id = ? AND link_id = ?'
-    ).get(orderId, link.id);
+    const already = await db.queryOne(
+      'SELECT id FROM conversions WHERE order_id = ? AND link_id = ?',
+      [orderId, link.id]
+    );
 
     if (!already) {
-      db.prepare(`
+      await db.run(`
         INSERT INTO conversions (link_id, order_id, amount, commission, converted_at)
         VALUES (?, ?, ?, ?, ?)
-      `).run(link.id, orderId, amount, commission, orderDate);
+      `, [link.id, orderId, amount, commission, orderDate]);
     }
   } catch (err: any) {
     console.error('[test-order] DB error:', err);

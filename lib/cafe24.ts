@@ -131,7 +131,10 @@ export async function getOrders(
       'X-Cafe24-Api-Version': CAFE24_API_VERSION,
     },
   });
-  if (!res.ok) throw new Error(`Cafe24 API error: ${res.status}`);
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Cafe24 API error: ${res.status} - ${errBody}`);
+  }
   return res.json();
 }
 

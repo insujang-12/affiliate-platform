@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Copy, Trash2, Check, ExternalLink } from 'lucide-react';
+import { Plus, Copy, Trash2, Check, ExternalLink, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { formatKRW, formatNumber } from '@/lib/utils';
 
@@ -15,12 +15,20 @@ interface TrackingLink {
   conversion_count: number;
   total_commission: number;
   created_at: string;
+  end_date: string | null;
 }
 
 interface Contract {
   id: number;
   brand_name: string;
   revenue_share: number;
+  end_date: string;
+}
+
+function isExpired(endDate: string | null): boolean {
+  if (!endDate) return false;
+  const today = new Date().toISOString().split('T')[0];
+  return endDate < today;
 }
 
 export default function LinksPage() {
@@ -211,78 +219,97 @@ export default function LinksPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {links.map((link) => (
-                  <tr key={link.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-gray-900">{link.title}</span>
-                        <a
-                          href={link.original_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-gray-400 hover:text-indigo-600 flex items-center gap-1 mt-0.5 w-fit"
-                        >
-                          <ExternalLink size={10} />
-                          원본 URL
-                        </a>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      {link.brand_name ? (
-                        <span className="text-sm text-gray-600">
-                          {link.brand_name}
-                          {link.revenue_share != null && (
-                            <span className="ml-1.5 text-xs text-emerald-600 font-medium">
-                              {link.revenue_share}%
-                            </span>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="text-sm text-gray-400 italic">미연결</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      <span className="text-sm font-medium text-gray-900">
-                        {formatNumber(link.click_count)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      <span className="text-sm text-gray-700">{conversionRate(link)}%</span>
-                      <span className="text-xs text-gray-400 ml-1">({link.conversion_count}건)</span>
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      <span className="text-sm font-semibold text-gray-900">
-                        {formatKRW(link.total_commission)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-center">
-                      <button
-                        onClick={() => copyTrackingUrl(link.code)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-600 rounded-lg transition-colors"
-                      >
-                        {copiedCode === link.code ? (
-                          <>
-                            <Check size={12} className="text-emerald-600" />
-                            복사됨
-                          </>
+                {links.map((link) => {
+                  const expired = isExpired(link.end_date);
+                  return (
+                    <tr
+                      key={link.id}
+                      className={`transition-colors ${expired ? 'opacity-40 bg-gray-50' : 'hover:bg-gray-50/50'}`}
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">{link.title}</span>
+                            {expired && (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
+                                <AlertCircle size={10} />
+                                만료됨
+                              </span>
+                            )}
+                          </div>
+                          
+                            href={link.original_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-gray-400 hover:text-indigo-600 flex items-center gap-1 w-fit"
+                          >
+                            <ExternalLink size={10} />
+                            원본 URL
+                          </a>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        {link.brand_name ? (
+                          <span className="text-sm text-gray-600">
+                            {link.brand_name}
+                            {link.revenue_share != null && (
+                              <span className="ml-1.5 text-xs text-emerald-600 font-medium">
+                                {link.revenue_share}%
+                              </span>
+                            )}
+                          </span>
                         ) : (
-                          <>
-                            <Copy size={12} />
-                            {link.code}
-                          </>
+                          <span className="text-sm text-gray-400 italic">미연결</span>
                         )}
-                      </button>
-                    </td>
-                    <td className="px-4 py-4">
-                      <button
-                        onClick={() => handleDelete(link.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <span className="text-sm font-medium text-gray-900">
+                          {formatNumber(link.click_count)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <span className="text-sm text-gray-700">{conversionRate(link)}%</span>
+                        <span className="text-xs text-gray-400 ml-1">({link.conversion_count}건)</span>
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <span className="text-sm font-semibold text-gray-900">
+                          {formatKRW(link.total_commission)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <button
+                          onClick={() => copyTrackingUrl(link.code)}
+                          disabled={expired}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                            expired
+                              ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                              : 'bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-600'
+                          }`}
+                        >
+                          {copiedCode === link.code ? (
+                            <>
+                              <Check size={12} className="text-emerald-600" />
+                              복사됨
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={12} />
+                              {link.code}
+                            </>
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-4 py-4">
+                        <button
+                          onClick={() => handleDelete(link.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -112,6 +112,9 @@ export interface Cafe24Order {
   affiliate_code: string | null;
   referral_url: string | null;
   first_referral_url: string | null;
+  payment_amount: string | null;
+  naver_point: string | null;
+  billing_name: string | null;
 }
 
 export async function getOrders(

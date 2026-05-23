@@ -45,7 +45,7 @@ interface Stats {
   total_commission: number;
 }
 
-const SYNC_INTERVAL = 300; // 5 minutes in seconds
+const SYNC_INTERVAL = 300;
 
 function fmtCountdown(sec: number) {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
@@ -64,7 +64,6 @@ export default function Cafe24Page() {
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
-  // Form state
   const [mallId, setMallId] = useState('');
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
@@ -77,6 +76,18 @@ export default function Cafe24Page() {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 4000);
   }
+
+  // URL 파라미터로 연결 성공/실패 처리
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connected') === '1') {
+      showToast('success', '카페24 연결 성공! 동기화를 시작합니다.');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('error')) {
+      showToast('error', decodeURIComponent(params.get('error')!));
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   const fetchCredentials = useCallback(async () => {
     const res = await fetch('/api/brand/cafe24/credentials');
@@ -101,7 +112,6 @@ export default function Cafe24Page() {
     init();
   }, [fetchCredentials, fetchOrders]);
 
-  // Core sync function
   const doSync = useCallback(
     async (credId: number) => {
       if (syncingRef.current) return;
@@ -132,7 +142,6 @@ export default function Cafe24Page() {
         if (res.ok) {
           await Promise.all([fetchCredentials(), fetchOrders(credId)]);
         } else if (res.status === 401) {
-          // Token invalid — mark disconnected in local state
           setCredentials((prev) =>
             prev.map((c) => (c.id === credId ? { ...c, is_connected: 0 } : c))
           );
@@ -150,11 +159,9 @@ export default function Cafe24Page() {
     [fetchCredentials, fetchOrders]
   );
 
-  // 5-minute countdown + auto-sync
   useEffect(() => {
     if (!activeCred) return;
     const credId = activeCred.id;
-
     setCountdown(SYNC_INTERVAL);
 
     const tick = setInterval(() => {
@@ -190,12 +197,10 @@ export default function Cafe24Page() {
     const data = await res.json();
     setCreating(false);
 
-    if (data.connected) {
-      setMallId(''); setClientId(''); setClientSecret('');
+    if (data.connect_url) {
+      // 저장 완료 → 카페24 로그인 페이지로 이동
       setShowAddForm(false);
-      showToast('success', `${mallId}.cafe24.com 연결 성공! 동기화를 시작합니다.`);
-      await fetchCredentials();
-      doSync(data.id);
+      window.location.href = data.connect_url;
     } else {
       showToast('error', data.error ?? 'API 인증에 실패했습니다. 정보를 확인해주세요.');
     }
@@ -215,7 +220,6 @@ export default function Cafe24Page() {
 
   return (
     <div className="space-y-6">
-      {/* Toast */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-5 py-3.5 rounded-xl shadow-xl text-sm font-medium flex items-center gap-2 max-w-sm transition-all ${
           toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
@@ -225,12 +229,11 @@ export default function Cafe24Page() {
         </div>
       )}
 
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">카페24 연동</h1>
           <p className="text-gray-500 mt-1 text-sm">
-            카페24 관리자에서 발급한 API 정보를 입력하면 주문 데이터가 자동으로 동기화됩니다.
+            카페24 앱의 Client ID와 Secret을 입력하면 카페24 로그인 후 자동으로 연동됩니다.
           </p>
         </div>
         <Button onClick={() => setShowAddForm(true)} size="md">
@@ -239,44 +242,28 @@ export default function Cafe24Page() {
         </Button>
       </div>
 
-      {/* Setup guide */}
       <div className="bg-violet-50 border border-violet-100 rounded-2xl p-5">
-        <p className="text-sm font-semibold text-violet-900 mb-3">카페24 API 키 발급 방법</p>
+        <p className="text-sm font-semibold text-violet-900 mb-3">카페24 연동 방법</p>
         <ol className="space-y-2 text-sm text-violet-700">
           <li className="flex gap-2 items-start">
             <span className="w-5 h-5 bg-violet-200 text-violet-800 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</span>
-            <span>카페24 관리자 페이지에 로그인합니다.</span>
+            <span><strong className="text-violet-900">카페24 개발자센터</strong>(developers.cafe24.com)에서 앱을 생성하고 Client ID / Secret을 발급받으세요.</span>
           </li>
           <li className="flex gap-2 items-start">
             <span className="w-5 h-5 bg-violet-200 text-violet-800 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</span>
-            <span>
-              상단 메뉴에서{' '}
-              <strong className="text-violet-900">쇼핑몰 설정</strong>
-              {' → '}
-              <strong className="text-violet-900">기본 설정</strong>
-              {' → '}
-              <strong className="text-violet-900">API</strong>
-              로 이동합니다.
-            </span>
+            <span>앱 설정의 <strong className="text-violet-900">Redirect URI</strong>에 <code className="bg-violet-100 px-1 rounded text-xs">https://affiliate-platform-pied-nine.vercel.app/api/brand/cafe24/callback</code> 를 등록하세요.</span>
           </li>
           <li className="flex gap-2 items-start">
             <span className="w-5 h-5 bg-violet-200 text-violet-800 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">3</span>
-            <span>
-              <strong className="text-violet-900">REST API 클라이언트 ID / 시크릿 발급</strong> 버튼을 클릭합니다.
-            </span>
+            <span>아래 <strong className="text-violet-900">쇼핑몰 추가</strong> 버튼을 눌러 쇼핑몰 ID, Client ID, Secret을 입력하세요.</span>
           </li>
           <li className="flex gap-2 items-start">
             <span className="w-5 h-5 bg-violet-200 text-violet-800 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">4</span>
-            <span>
-              발급된 <strong className="text-violet-900">클라이언트 ID</strong>와{' '}
-              <strong className="text-violet-900">클라이언트 시크릿</strong>을 아래 폼에 입력하세요.
-              연결 즉시 주문 데이터가 동기화되며, 이후 5분마다 자동으로 갱신됩니다.
-            </span>
+            <span>카페24 로그인 화면이 뜨면 로그인하면 자동으로 연동 완료됩니다.</span>
           </li>
         </ol>
       </div>
 
-      {/* Add form modal */}
       {showAddForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
           onClick={() => setShowAddForm(false)}>
@@ -284,13 +271,11 @@ export default function Cafe24Page() {
             onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-bold text-gray-900 mb-1">카페24 쇼핑몰 연동</h2>
             <p className="text-sm text-gray-500 mb-5">
-              입력 즉시 API 연결을 테스트합니다.
+              저장 후 카페24 로그인 페이지로 이동합니다.
             </p>
             <form onSubmit={handleSaveCredential} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  쇼핑몰 ID
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">쇼핑몰 ID</label>
                 <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-violet-500 focus-within:border-transparent">
                   <input
                     value={mallId}
@@ -305,9 +290,7 @@ export default function Cafe24Page() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  클라이언트 ID
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">클라이언트 ID</label>
                 <input
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
@@ -317,9 +300,7 @@ export default function Cafe24Page() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  클라이언트 시크릿
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">클라이언트 시크릿</label>
                 <input
                   type="password"
                   value={clientSecret}
@@ -332,7 +313,7 @@ export default function Cafe24Page() {
               {creating && (
                 <div className="flex items-center gap-2 text-sm text-violet-600 bg-violet-50 rounded-lg px-4 py-3">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-violet-600" />
-                  API 연결 테스트 중...
+                  저장 중...
                 </div>
               )}
               <div className="flex gap-3 pt-1">
@@ -340,9 +321,8 @@ export default function Cafe24Page() {
                   onClick={() => setShowAddForm(false)}>
                   취소
                 </Button>
-                <Button type="submit" loading={creating}
-                  className="flex-1 bg-violet-600 hover:bg-violet-700">
-                  저장 및 연결
+                <Button type="submit" loading={creating} className="flex-1 bg-violet-600 hover:bg-violet-700">
+                  저장 후 카페24 로그인
                 </Button>
               </div>
             </form>
@@ -367,7 +347,6 @@ export default function Cafe24Page() {
         <div className="space-y-4">
           {credentials.map((cred) => (
             <div key={cred.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              {/* Credential header */}
               <div className="p-5 flex items-center gap-4">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                   cred.is_connected ? 'bg-violet-100' : 'bg-gray-100'
@@ -385,7 +364,7 @@ export default function Cafe24Page() {
                         ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-red-100 text-red-600'
                     }`}>
-                      {cred.is_connected ? '연결됨' : '연결 실패'}
+                      {cred.is_connected ? '연결됨' : '연결 필요'}
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">
@@ -397,12 +376,8 @@ export default function Cafe24Page() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {cred.is_connected && activeCred?.id === cred.id && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      loading={syncing}
-                      onClick={() => { doSync(cred.id); setCountdown(SYNC_INTERVAL); }}
-                    >
+                    <Button size="sm" variant="secondary" loading={syncing}
+                      onClick={() => { doSync(cred.id); setCountdown(SYNC_INTERVAL); }}>
                       <RefreshCw size={14} className={syncing ? 'animate-spin mr-1' : 'mr-1'} />
                       지금 동기화
                     </Button>
@@ -410,12 +385,11 @@ export default function Cafe24Page() {
                   {!cred.is_connected && (
                     <button
                       onClick={() => {
-                        setMallId(cred.mall_id);
-                        setShowAddForm(true);
+                        window.location.href = `/api/brand/cafe24/connect?credential_id=${cred.id}`;
                       }}
                       className="px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors"
                     >
-                      재입력
+                      카페24 로그인
                     </button>
                   )}
                   <button onClick={() => handleDelete(cred.id)}
@@ -425,7 +399,6 @@ export default function Cafe24Page() {
                 </div>
               </div>
 
-              {/* Auto-sync status bar (only for active connected credential) */}
               {cred.is_connected && activeCred?.id === cred.id && (
                 <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-4">
                   <div className="flex items-center gap-2">
@@ -437,12 +410,10 @@ export default function Cafe24Page() {
                       }
                     </span>
                   </div>
-                  <button
-                    onClick={toggleAutoSync}
+                  <button onClick={toggleAutoSync}
                     className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
                       autoSync ? 'text-violet-600 hover:text-violet-800' : 'text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
+                    }`}>
                     {autoSync
                       ? <><ToggleRight size={18} /> 자동 동기화 ON</>
                       : <><ToggleLeft size={18} /> 자동 동기화 OFF</>
@@ -461,7 +432,6 @@ export default function Cafe24Page() {
         </div>
       )}
 
-      {/* Sync log */}
       {syncLog.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-3.5 border-b border-gray-100">
@@ -489,7 +459,6 @@ export default function Cafe24Page() {
         </div>
       )}
 
-      {/* Orders table */}
       {orders.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
@@ -507,9 +476,7 @@ export default function Cafe24Page() {
                 ].map(({ label, value, hl }) => (
                   <div key={label} className={`rounded-xl p-3 ${hl ? 'bg-violet-50' : 'bg-gray-50'}`}>
                     <p className="text-xs text-gray-500">{label}</p>
-                    <p className={`text-sm font-bold mt-0.5 ${hl ? 'text-violet-700' : 'text-gray-900'}`}>
-                      {value}
-                    </p>
+                    <p className={`text-sm font-bold mt-0.5 ${hl ? 'text-violet-700' : 'text-gray-900'}`}>{value}</p>
                   </div>
                 ))}
               </div>
@@ -520,30 +487,22 @@ export default function Cafe24Page() {
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100">
                   {['주문번호', '주문일', '구매자', '금액', '귀속 링크', '커미션', '상태'].map((h) => (
-                    <th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3 whitespace-nowrap">
-                      {h}
-                    </th>
+                    <th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {orders.map((order) => (
                   <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-mono text-gray-700">{order.order_id}</span>
-                    </td>
+                    <td className="px-4 py-3"><span className="text-xs font-mono text-gray-700">{order.order_id}</span></td>
                     <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                       {order.order_date ? new Date(order.order_date).toLocaleDateString('ko-KR') : '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">{order.buyer_name ?? '-'}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">
-                      {formatKRW(order.total_price)}
-                    </td>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{formatKRW(order.total_price)}</td>
                     <td className="px-4 py-3">
                       {order.link_title ? (
-                        <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">
-                          {order.link_title}
-                        </span>
+                        <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{order.link_title}</span>
                       ) : order.affiliate_code ? (
                         <span className="text-xs font-mono text-gray-400">{order.affiliate_code}</span>
                       ) : (
@@ -555,9 +514,7 @@ export default function Cafe24Page() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap ${
-                        order.is_attributed
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-gray-100 text-gray-500'
+                        order.is_attributed ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
                       }`}>
                         {order.is_attributed ? '귀속됨' : '미귀속'}
                       </span>

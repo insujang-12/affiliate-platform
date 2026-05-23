@@ -125,6 +125,8 @@ export async function getOrders(
   params.set('limit', String(options.limit ?? 100));
   params.set('offset', String(options.offset ?? 0));
 
+  params.set('fields', 'order_id,order_date,billing_name,payment_amount,actual_payment_amount,affiliate_code,referral_url,first_referral_url,naver_point,order_place_id');
+
   const res = await fetch(`https://${mallId}.cafe24api.com/api/v2/admin/orders?${params}`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -137,6 +139,7 @@ export async function getOrders(
   }
   const result = await res.json();
   console.log('orders raw:', JSON.stringify(result.orders?.slice(0, 2)));
+  console.log('first order fields:', Object.keys(result.orders?.[0] || {}));
   return result;
 }
 

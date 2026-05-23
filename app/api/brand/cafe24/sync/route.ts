@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     await db.transaction(async (tx) => {
       for (const order of orders) {
         const affiliateCode = extractAffiliateCode(order);
-        const totalPrice = parseFloat(order.actual_payment_amount || order.total_price || '0');
+        const totalPrice = parseFloat(order.actual_payment_amount || order.payment_amount || order.naver_point || order.total_price || '0');
 
         let linkId: number | null = null;
         let commission = 0;

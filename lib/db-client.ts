@@ -88,16 +88,18 @@ function transformSql(sql: string): string {
 
 class PgClient implements DbClient {
   readonly isPg = true;
-  private client: any = null;
+  private pool: any = null;
   private initPromise: Promise<void> | null = null;
 
-  private async getConnectedClient() {
-    if (!this.client) {
-      const { createClient } = require('@vercel/postgres') as typeof import('@vercel/postgres');
-      this.client = createClient({ connectionString: process.env.POSTGRES_URL });
-      await this.client.connect();
+  private getPool() {
+    if (!this.pool) {
+      const { Pool } = require('pg') as typeof import('pg');
+      this.pool = new Pool({
+        connectionString: process.env.POSTGRES_URL,
+        ssl: { rejectUnauthorized: false },
+      });
     }
-    return this.client;
+    return this.pool;
   }
 
   private async ensureInit() {
@@ -111,7 +113,7 @@ class PgClient implements DbClient {
   }
 
   private async _initSchema() {
-    const pool = await this.getConnectedClient();
+    const pool = this.getPool();
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -215,8 +217,7 @@ class PgClient implements DbClient {
     await this._seedDemoData(pool);
   }
 
-  private async _seedDemoData(client: any) {
-    const pool = client;
+  private async _seedDemoData(pool: any) {
     const bcrypt = require('bcryptjs');
 
     // Brand demo user
@@ -308,16 +309,14 @@ class PgClient implements DbClient {
   async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     await this.ensureInit();
     const transformed = transformSql(sql);
-    const client = await this.getConnectedClient();
-    const result = await client.query(transformed, params);
+    const result = await this.getPool().query(transformed, params);
     return result.rows as T[];
   }
 
   async queryOne<T = any>(sql: string, params: any[] = []): Promise<T | null> {
     await this.ensureInit();
     const transformed = transformSql(sql);
-    const client = await this.getConnectedClient();
-    const result = await client.query(transformed, params);
+    const result = await this.getPool().query(transformed, params);
     return (result.rows[0] as T) ?? null;
   }
 
@@ -332,8 +331,7 @@ class PgClient implements DbClient {
       transformed = transformed.trimEnd().replace(/;?\s*$/, '') + ' RETURNING id';
     }
 
-    const client = await this.getConnectedClient();
-    const result = await client.query(transformed, params);
+    const result = await this.getPool().query(transformed, params);
     return {
       changes: result.rowCount ?? 0,
       lastId: Number(result.rows[0]?.id ?? 0),
@@ -342,15 +340,17 @@ class PgClient implements DbClient {
 
   async transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T> {
     await this.ensureInit();
-    const client = await this.getConnectedClient();
-    await client.query('BEGIN');
+    const client = await this.getPool().connect();
     try {
+      await client.query('BEGIN');
       const result = await fn(new PgTxClient(client));
       await client.query('COMMIT');
       return result;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
+    } finally {
+      client.release();
     }
   }
 }
@@ -402,7 +402,7 @@ let _client: DbClient | null = null;
 
 export function getDbClient(): DbClient {
   if (!_client) {
-    if (process.env.POSTGRES_URL || process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL) {
+    if (process.env.POSTGRES_URL) {
       _client = new PgClient();
     } else {
       _client = new SqliteClient();

@@ -237,7 +237,7 @@ export default function LinksPage() {
                               </span>
                             )}
                           </div>
-                          
+                          <a
                             href={link.original_url}
                             target="_blank"
                             rel="noopener noreferrer"

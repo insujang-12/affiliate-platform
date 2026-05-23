@@ -94,7 +94,7 @@ class PgClient implements DbClient {
   private async getConnectedClient() {
     if (!this.client) {
       const { createClient } = require('@vercel/postgres') as typeof import('@vercel/postgres');
-      this.client = createClient();
+      this.client = createClient({ connectionString: process.env.POSTGRES_URL });
       await this.client.connect();
     }
     return this.client;

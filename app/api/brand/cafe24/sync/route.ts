@@ -30,13 +30,13 @@ export async function POST(req: NextRequest) {
 
   let accessToken = cred.access_token;
 
-  // Re-issue token if expired or within 10 minutes of expiry
   const shouldRefresh = !cred.token_expires_at ||
     new Date(cred.token_expires_at).getTime() - Date.now() < 10 * 60 * 1000;
 
   if (shouldRefresh) {
     try {
-      const tokens = await getAccessToken(cred.mall_id, cred.client_id, cred.client_secret);
+      // ✅ refresh_token 추가
+      const tokens = await getAccessToken(cred.mall_id, cred.client_id, cred.client_secret, cred.refresh_token);
       accessToken = tokens.access_token;
       await db.run(`
         UPDATE cafe24_credentials
@@ -51,7 +51,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Date range: last sync - 1h → today, fallback to last 7 days
   const endDate = new Date().toISOString().split('T')[0];
   const startDate = cred.last_synced_at
     ? new Date(new Date(cred.last_synced_at).getTime() - 60 * 60 * 1000)

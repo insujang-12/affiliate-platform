@@ -20,7 +20,7 @@ export function getAuthorizationUrl(
     response_type: 'code',
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: 'mall.read_order,mall.read_product',
+    scope: 'mall.read_order',
     state,
   });
   return `https://${mallId}.cafe24api.com/api/v2/oauth/authorize?${params}`;

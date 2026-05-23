@@ -135,7 +135,9 @@ export async function getOrders(
     const errBody = await res.text();
     throw new Error(`Cafe24 API error: ${res.status} - ${errBody}`);
   }
-  return res.json();
+  const result = await res.json();
+  console.log('orders raw:', JSON.stringify(result.orders?.slice(0, 2)));
+  return result;
 }
 
 export function extractAffiliateCode(order: Cafe24Order): string | null {

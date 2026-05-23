@@ -43,12 +43,16 @@ export default function LinksPage() {
     ]);
     const linksData = await linksRes.json();
     const contractsData = await contractsRes.json();
-    if (Array.isArray(linksData)) setLinks(linksData.map((l: any) => ({ ...l, id: Number(l.id) })));
-    if (Array.isArray(contractsData)) setContracts(contractsData.map((c: any) => ({
-      ...c,
-      id: Number(c.id),
-      revenue_share: Number(c.revenue_share),
-    })));
+    if (Array.isArray(linksData)) {
+      setLinks(linksData.map((l: any) => ({ ...l, id: Number(l.id) })));
+    }
+    if (Array.isArray(contractsData)) {
+      setContracts(contractsData.map((c: any) => ({
+        ...c,
+        id: Number(c.id),
+        revenue_share: Number(c.revenue_share),
+      })));
+    }
     setLoading(false);
   }, []);
 
@@ -111,8 +115,14 @@ export default function LinksPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}>
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowForm(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 className="text-lg font-bold text-gray-900 mb-4">새 트래킹 링크 만들기</h2>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
@@ -154,7 +164,12 @@ export default function LinksPage() {
                 </select>
               </div>
               <div className="flex gap-3 pt-2">
-                <Button type="button" variant="secondary" className="flex-1" onClick={() => setShowForm(false)}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setShowForm(false)}
+                >
                   취소
                 </Button>
                 <Button type="submit" loading={creating} className="flex-1">
@@ -174,7 +189,10 @@ export default function LinksPage() {
         ) : links.length === 0 ? (
           <div className="py-16 text-center">
             <p className="text-gray-400 text-sm">아직 생성된 링크가 없습니다.</p>
-            <button onClick={() => setShowForm(true)} className="mt-3 text-sm text-indigo-600 font-medium hover:underline">
+            <button
+              onClick={() => setShowForm(true)}
+              className="mt-3 text-sm text-indigo-600 font-medium hover:underline"
+            >
               첫 번째 링크 만들기 →
             </button>
           </div>
@@ -198,7 +216,7 @@ export default function LinksPage() {
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-gray-900">{link.title}</span>
-                        
+                        <a
                           href={link.original_url}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -210,22 +228,32 @@ export default function LinksPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <span className="text-sm text-gray-600">
-                        {link.brand_name ?? <span className="text-gray-400 italic">미연결</span>}
-                      </span>
-                      {link.revenue_share != null && (
-                        <span className="ml-1.5 text-xs text-emerald-600 font-medium">{link.revenue_share}%</span>
+                      {link.brand_name ? (
+                        <span className="text-sm text-gray-600">
+                          {link.brand_name}
+                          {link.revenue_share != null && (
+                            <span className="ml-1.5 text-xs text-emerald-600 font-medium">
+                              {link.revenue_share}%
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400 italic">미연결</span>
                       )}
                     </td>
                     <td className="px-4 py-4 text-right">
-                      <span className="text-sm font-medium text-gray-900">{formatNumber(link.click_count)}</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {formatNumber(link.click_count)}
+                      </span>
                     </td>
                     <td className="px-4 py-4 text-right">
                       <span className="text-sm text-gray-700">{conversionRate(link)}%</span>
                       <span className="text-xs text-gray-400 ml-1">({link.conversion_count}건)</span>
                     </td>
                     <td className="px-4 py-4 text-right">
-                      <span className="text-sm font-semibold text-gray-900">{formatKRW(link.total_commission)}</span>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {formatKRW(link.total_commission)}
+                      </span>
                     </td>
                     <td className="px-4 py-4 text-center">
                       <button
@@ -233,9 +261,15 @@ export default function LinksPage() {
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-600 rounded-lg transition-colors"
                       >
                         {copiedCode === link.code ? (
-                          <><Check size={12} className="text-emerald-600" />복사됨</>
+                          <>
+                            <Check size={12} className="text-emerald-600" />
+                            복사됨
+                          </>
                         ) : (
-                          <><Copy size={12} />{link.code}</>
+                          <>
+                            <Copy size={12} />
+                            {link.code}
+                          </>
                         )}
                       </button>
                     </td>

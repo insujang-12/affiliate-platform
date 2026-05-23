@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDbClient } from '@/lib/db-client';
-import { getAccessToken } from '@/lib/cafe24';
 
 function getBrandUser(session: any) {
   const user = session?.user;
@@ -38,8 +37,6 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDbClient();
-
-  // Upsert
   const existing = await db.queryOne<any>(
     'SELECT id FROM cafe24_credentials WHERE user_id = ? AND mall_id = ?',
     [user.id, mall_id]
@@ -50,7 +47,7 @@ export async function POST(req: NextRequest) {
     await db.run(`
       UPDATE cafe24_credentials
       SET client_id = ?, client_secret = ?, is_connected = 0,
-          access_token = NULL, token_expires_at = NULL
+          access_token = NULL, refresh_token = NULL, token_expires_at = NULL
       WHERE id = ?
     `, [client_id, client_secret, existing.id]);
     credId = existing.id;
@@ -62,24 +59,14 @@ export async function POST(req: NextRequest) {
     credId = result.lastId;
   }
 
-  // Immediately test connection using client_credentials grant
-  try {
-    const tokens = await getAccessToken(mall_id, client_id, client_secret);
+  const connectUrl = `/api/brand/cafe24/connect?credential_id=${credId}`;
 
-    await db.run(`
-      UPDATE cafe24_credentials
-      SET access_token = ?, token_expires_at = ?, is_connected = 1
-      WHERE id = ?
-    `, [tokens.access_token, tokens.expires_at, credId]);
-
-    return NextResponse.json({ id: credId, connected: true });
-  } catch (err: any) {
-    return NextResponse.json({
-      id: credId,
-      connected: false,
-      error: err.message ?? 'API 인증 실패',
-    }, { status: 422 });
-  }
+  return NextResponse.json({
+    id: credId,
+    connected: false,
+    connect_url: connectUrl,
+    message: '카페24 로그인이 필요합니다. connect_url로 이동하세요.',
+  });
 }
 
 export async function DELETE(req: NextRequest) {
@@ -93,6 +80,5 @@ export async function DELETE(req: NextRequest) {
 
   const db = getDbClient();
   await db.run('DELETE FROM cafe24_credentials WHERE id = ? AND user_id = ?', [id, user.id]);
-
   return NextResponse.json({ success: true });
 }

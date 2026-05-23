@@ -12,7 +12,7 @@ export async function GET() {
   const links = await db.query(`
     SELECT
       tl.id, tl.title, tl.original_url, tl.code, tl.created_at,
-      c.brand_name, c.revenue_share,
+      c.brand_name, c.revenue_share, c.end_date,
       COUNT(DISTINCT cl.id) as click_count,
       COUNT(DISTINCT cv.id) as conversion_count,
       COALESCE(SUM(cv.commission), 0) as total_commission
@@ -21,7 +21,7 @@ export async function GET() {
     LEFT JOIN clicks cl ON tl.id = cl.link_id
     LEFT JOIN conversions cv ON tl.id = cv.link_id
     WHERE tl.user_id = ?
-    GROUP BY tl.id, tl.title, tl.original_url, tl.code, tl.created_at, c.brand_name, c.revenue_share
+    GROUP BY tl.id, tl.title, tl.original_url, tl.code, tl.created_at, c.brand_name, c.revenue_share, c.end_date
     ORDER BY tl.created_at DESC
   `, [userId]);
   return NextResponse.json(links);

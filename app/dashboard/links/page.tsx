@@ -246,9 +246,6 @@ export default function LinksPage() {
                             <ExternalLink size={10} />
                             원본 URL
                           </a>
-                            <ExternalLink size={10} />
-                            원본 URL
-                          </a>
                         </div>
                       </td>
                       <td className="px-4 py-4">
